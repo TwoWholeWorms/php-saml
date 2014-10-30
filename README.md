@@ -44,7 +44,7 @@ Supports:
  * Assertion signature.
  * Message signature: AuthNRequest, LogoutRequest, LogoutResponses.
  * Enable an Assertion Consumer Service endpoint.
- * Enable an Single Logour Service endpoint.
+ * Enable a Single Logout Service endpoint.
  * Publish the SP metadata (which can be signed).
 
 Key features:
@@ -75,7 +75,7 @@ Installation
 
 The toolkit is hosted on github. You can download it from:
 
- * Lastest release: https://github.com/onelogin/php-saml/releases/tag/v2.0.0
+ * Lastest release: https://github.com/onelogin/php-saml/releases/latest
  * Master repo: https://github.com/onelogin/php-saml/tree/master
  
 Copy the core of the library inside the php application. (each application has its
@@ -151,10 +151,13 @@ SAML requires a x.509 cert to sign and encrypt elements like NameID, Message,
 Assertion, Metadata.
 
 If our environment requires sign or encrypt support, this folder may contain
-the x.509 info that the SP will use:
+the x509 cert and the private key that the SP will use:
 
  * **sp.crt** The public cert of the SP
  * **sp.key** The privake key of the SP
+
+Or also we can provide those data in the setting file at the $settings['sp']['x509cert']
+and the $settings['sp']['privateKey'].
 
 Sometimes we could need a signature on the metadata published by the SP, in
 this case we could use the x.509 cert previously mentioned or use a new x.509
@@ -286,7 +289,12 @@ $settings = array (
         // Specifies the constraints on the name identifier to be used to
         // represent the requested subject.
         // Take a look on lib/Saml2/Constants.php to see the NameIdFormat supported.
-        'nameIdFormat' => 'urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress',
+        'NameIDFormat' => 'urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress',
+        // Usually x509cert and privateKey of the SP are provided by files placed at
+        // the certs folder. But we can also provide them with the following parameters
+        'x509cert' => '',
+        'privateKey' => '',
+
     ),
 
     // Identity Provider Data that we want connected with our SP.
@@ -536,8 +544,8 @@ try {
 The getSPMetadata will return the metadata signed or not based
 on the security info of the advanced_settings.php ('signMetadata').
 
-Before the XML metadata is exposed, a validation takes place to ensure
-that the info to be provided is authorized.
+Before the XML metadata is exposed, a check takes place to ensure
+that the info to be provided is valid.
 
 
 ##### Attribute Consumer Service(ACS) endpoints/acs.php #####
@@ -690,9 +698,8 @@ if (empty($errors)) {
 }
 ```
 
-If the SLS endpoints receives an Logout Request, the request is
-validated, the session is closed and a Logout Response is sent
-to the SLS endpoint of the idP.
+If the SLS endpoints receives a Logout Response, the response is
+validated and the session could be closed
 
 ```php
 // part of the processSLO method
@@ -709,9 +716,9 @@ if (!$logoutResponse->isValid($requestId)) {
 }
 ```
 
-If the SLS endpoints receives a Logout Response, the response is
-validated and the session is closed, but if a RelayState is
-provided a redirection take place.
+If the SLS endpoints receives an Logout Request, the request is
+validated, the session is closed and a Logout Response is sent
+to the SLS endpoint of the idP.
 
 ```php
 // part of the processSLO method
@@ -750,7 +757,7 @@ If we don't want that processSLO to destroy the session, pass a true
 parameter to the processSLO method
 
 ```php
-$keepLocalSession = true,
+$keepLocalSession = True;
 $auth->processSLO($keepLocalSession);
 ```
 
@@ -843,7 +850,7 @@ if (isset($_GET['sso'])) {    // SSO action.  Will send an AuthNRequest to the I
     }
 }
 
-if (isset($_SESSION['samlUserdata'])) {   // If there is user data we print it.  
+if (isset($_SESSION['samlUserdata'])) {   // If there is user data we print it.
     if (!empty($_SESSION['samlUserdata'])) {
         $attributes = $_SESSION['samlUserdata'];
         echo 'You have the following attributes:<br>';
@@ -933,6 +940,7 @@ Main class of OneLogin PHP Toolkit
  * **getAttributes** Returns the set of SAML attributes.
  * **getAttribute** Returns the requested SAML attribute
  * **getNameId** Returns the nameID
+ * **getSessionIndex** Gets the SessionIndex from the AuthnStatement.
  * **getErrors** Returns if there were any error 
  * **getSSOurl** Gets the SSO url.
  * **getSLOurl** Gets the SLO url.
@@ -941,12 +949,13 @@ Main class of OneLogin PHP Toolkit
  * **getSettings** Returns the settings info
  * **setStrict** Set the strict mode active/disable
 
-##### OneLogin_Saml2_Auth - AuthnRequest.php #####
+##### OneLogin_Saml2_AuthnRequest - AuthnRequest.php #####
 
 SAML 2 Authentication Request class
 
- * **OneLogin_Saml2_Auth** Constructs the AuthnRequest object.
+ * **OneLogin_Saml2_AuthnRequest** Constructs the AuthnRequest object.
  * **getRequest** Returns deflated, base64 encoded, unsigned AuthnRequest.
+ * **getId** Returns the AuthNRequest ID.
 
 ##### OneLogin_Saml2_Response - Response.php #####
 
@@ -968,6 +977,7 @@ SAML 2 Authentication Response class
    Assertion (encrypted or not).
  * **validateTimestamps** Verifies that the document is still valid according
    Conditions Element.
+ * **getError** After execute a validation process, if fails this method returns the cause
 
 ##### OneLogin_Saml2_LogoutRequest - LogoutRequest.php #####
 
@@ -981,6 +991,7 @@ SAML 2 Logout Request class
  * **getIssuer** Gets the Issuer of the Logout Request.
  * **getSessionIndexes** Gets the SessionIndexes from the Logout Request.
  * **isValid** Checks if the Logout Request recieved is valid.
+ * **getError** After execute a validation process, if fails this method returns the cause
 
 ##### OneLogin_Saml2_LogoutResponse - LogoutResponse.php #####
 
@@ -992,7 +1003,8 @@ SAML 2 Logout Response class
  * **getStatus** Gets the Status of the Logout Response.
  * **isValid** Determines if the SAML LogoutResponse is valid
  * **build** Generates a Logout Response object.
- * **getResponse** Returns a Logout Response object.    
+ * **getResponse** Returns a Logout Response object.
+ * **getError** After execute a validation process, if fails this method returns the cause
 
 ##### OneLogin_Saml2_Settings - Settings.php #####
 
@@ -1001,7 +1013,7 @@ Configuration of the OneLogin PHP Toolkit
  * **OneLogin_Saml2_Settings**  Initializes the settings: Sets the paths of
    the different folders and Loads settings info from settings file or
    array/object provided
- * **checkSettings** Checks the settings info.   
+ * **checkSettings** Checks the settings info.
  * **getBasePath** Returns base path.
  * **getCertPath** Returns cert path.
  * **getLibPath** Returns lib path.
@@ -1018,6 +1030,8 @@ Configuration of the OneLogin PHP Toolkit
  * **getSPMetadata** Gets the SP metadata. The XML representation.
  * **validateMetadata** Validates an XML SP Metadata.
  * **formatIdPCert** Formats the IdP cert.
+ * **formatSPCert** Formats the SP cert.
+ * **formatSPKey** Formats the SP private key.
  * **getErrors** Returns an array with the errors, the array is empty when
    the settings is ok.
  * **setStrict** Activates or deactivates the strict mode.
@@ -1040,6 +1054,7 @@ Auxiliary class that contains several methods
  * **validateXML** This function attempts to validate an XML string against
    the specified schema.
  * **formatCert** Returns a x509 cert (adding header & footer if required).
+ * **formatPrivateKey** returns a RSA private key (adding header & footer if required).
  * **redirect** Executes a redirection to the provided url (or return the
    target url).
  * **isHTTPS** Checks if https or http.
@@ -1066,6 +1081,7 @@ Auxiliary class that contains several methods
  * **generateNameId** Generates a nameID.
  * **getStatus** Gets Status from a Response.
  * **decryptElement** Decrypts an encrypted element.
+ * **castKey** Converts a XMLSecurityKey to the correct algorithm.
  * **addSign** Adds signature key and senders certificate to an element 
    (Message or Assertion).
  * **validateSign** Validates a signature (Message or Assertion).
@@ -1110,7 +1126,7 @@ _toolkit_loader.php located at the base folder of the toolkit.
 ### IdP setup ###
 
 Once the SP is configured, the metadata of the SP is published at the
-metadata.php file. After that, configure the IdP based on that information.
+metadata.php file. Configure the IdP based on that information.
 
 
 ### How it works ###
@@ -1129,14 +1145,14 @@ metadata.php file. After that, configure the IdP based on that information.
     2.2 in the second link we access to (attrs.php) have the same process 
     described at 2.1 with the diference that as RelayState is set the attrs.php
 
-3. The SAML Response is processed in the ACS (index.php?acs), if the Response
-   is not valid, the process stops here and a message is shown. Otherwise we
-   are redirected to the RelayState view. a) index.php or b) attrs.php
+ 3. The SAML Response is processed in the ACS (index.php?acs), if the Response
+    is not valid, the process stops here and a message is shown. Otherwise we
+    are redirected to the RelayState view. a) index.php or b) attrs.php
 
-4. We are logged in the app and the user attributes are showed. 
-   At this point, we can test the single log out functionality.
+ 4. We are logged in the app and the user attributes are showed. 
+    At this point, we can test the single log out functionality.
 
-5. The single log out funcionality could be tested by 2 ways.
+ 5. The single log out funcionality could be tested by 2 ways.
 
     5.1 SLO Initiated by SP. Click on the "logout" link at the SP, after that a
     Logout Request is sent to the IdP, the session at the IdP is closed and 

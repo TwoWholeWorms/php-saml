@@ -35,6 +35,13 @@ class OneLogin_Saml2_Auth
      */
     private $_authenticated = false;
 
+
+    /**
+     * SessionIndex. When the user is logged, this stored the 
+     * from the AuthnStatement of the SAML Response
+     */
+    private $_sessionIndex;
+
     /**
      * If any error.
      *
@@ -91,6 +98,7 @@ class OneLogin_Saml2_Auth
                 $this->_attributes = $response->getAttributes();
                 $this->_nameid = $response->getNameId();
                 $this->_authenticated = true;
+                $this->_sessionIndex = $response->getSessionIndex();
             } else {
                 $this->_errors[] = 'invalid_response';
             }
@@ -106,7 +114,7 @@ class OneLogin_Saml2_Auth
     /**
      * Process the SAML Logout Response / Logout Request sent by the IdP.
      *
-     * @param boolean $keepLocalSession When false will destroy the local session, otherwise will destroy it
+     * @param boolean $keepLocalSession When false will destroy the local session, otherwise will keep it
      * @param string  $requestId        The ID of the LogoutRequest sent by this SP to the IdP
      */
     public function processSLO($keepLocalSession = false, $requestId = null)
@@ -124,16 +132,14 @@ class OneLogin_Saml2_Auth
                 }
             }
         } else if (isset($_GET) && isset($_GET['SAMLRequest'])) {
-            $decoded = base64_decode($_GET['SAMLRequest']);
-            $request = gzinflate($decoded);
-            if (!OneLogin_Saml2_LogoutRequest::isValid($this->_settings, $request)) {
+            $logoutRequest = new OneLogin_Saml2_LogoutRequest($this->_settings, $_GET['SAMLRequest']);
+            if (!$logoutRequest->isValid()) {
                 $this->_errors[] = 'invalid_logout_request';
             } else {
                 if (!$keepLocalSession) {
                     OneLogin_Saml2_Utils::deleteLocalSession();
                 }
-
-                $inResponseTo = OneLogin_Saml2_LogoutRequest::getID($request);
+                $inResponseTo = OneLogin_Saml2_LogoutRequest::getID(gzinflate(base64_decode($_GET['SAMLRequest'])));
                 $responseBuilder = new OneLogin_Saml2_LogoutResponse($this->_settings);
                 $responseBuilder->build($inResponseTo);
                 $logoutResponse = $responseBuilder->getResponse();
@@ -166,7 +172,7 @@ class OneLogin_Saml2_Auth
      * or to the url that we defined in our SSO Request.
      *
      * @param string $url        The target URL to redirect the user.
-     * @param array  $parameters Extra parameters to be passed as part of the url
+     * @param array  $parameters An array of additional parameters to send through to the IdP
      */
     public function redirectTo($url = '', $parameters = array())
     {
@@ -208,6 +214,16 @@ class OneLogin_Saml2_Auth
     public function getNameId()
     {
         return $this->_nameid;
+    }
+
+    /**
+     * Returns the SessionIndex
+     *
+     * @return string  The SessionIndex of the assertion
+     */
+    public function getSessionIndex()
+    {
+        return $this->_sessionIndex;
     }
 
     /**
@@ -268,7 +284,7 @@ class OneLogin_Saml2_Auth
         if (!empty($returnTo)) {
             $parameters['RelayState'] = $returnTo;
         } else {
-            $parameters['RelayState'] = OneLogin_Saml2_Utils::getSelfURLNoQuery();
+            $parameters['RelayState'] = OneLogin_Saml2_Utils::getSelfRoutedURLNoQuery();
         }
 
         $security = $this->_settings->getSecurityData();
@@ -284,26 +300,30 @@ class OneLogin_Saml2_Auth
      * Initiates the SLO process.
      *
      * @param string $returnTo The target URL the user should be returned to after logout.
+     * @param array  $parameters Extra parameters to be added to the GET
+     * @param string $sessionIndex The SessionIndex (taken from the SAML Response in the SSO process).
      */
-    public function logout($returnTo = null)
+    public function logout($returnTo = null, $parameters = array(), $sessionIndex = null)
     {
+        assert('is_array($parameters)');
+
         $sloUrl = $this->getSLOurl();
-        if (!isset($sloUrl)) {
+        if (empty($sloUrl)) {
             throw new OneLogin_Saml2_Error(
                 'The IdP does not support Single Log Out',
                 OneLogin_Saml2_Error::SAML_SINGLE_LOGOUT_NOT_SUPPORTED
             );
         }
 
-        $logoutRequest = new OneLogin_Saml2_LogoutRequest($this->_settings);
+        $logoutRequest = new OneLogin_Saml2_LogoutRequest($this->_settings, null, $sessionIndex);
 
         $samlRequest = $logoutRequest->getRequest();
 
-        $parameters = array('SAMLRequest' => $samlRequest);
+        $parameters['SAMLRequest'] = $samlRequest;
         if (!empty($returnTo)) {
             $parameters['RelayState'] = $returnTo;
         } else {
-            $parameters['RelayState'] = OneLogin_Saml2_Utils::getSelfURLNoQuery();
+            $parameters['RelayState'] = OneLogin_Saml2_Utils::getSelfRoutedURLNoQuery();
         }
 
         $security = $this->_settings->getSecurityData();
